@@ -1,3 +1,4 @@
+/* Shared color tokens let components switch themes through the root data-theme attribute. */
 :root {
   color-scheme: dark;
   --page: #18151e;
@@ -24,6 +25,7 @@
   --error-text: #f5bda3;
 }
 
+/* Dark is the default; only an explicit light preference overrides its palette. */
 :root[data-theme="light"] {
   color-scheme: light;
   --page: #f8f7f3;

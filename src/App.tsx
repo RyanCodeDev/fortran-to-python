@@ -7,7 +7,7 @@ import './App.css'
 type IconName = 'settings' | 'arrow' | 'upload' | 'copy' | 'download' | 'close' | 'shield' | 'code' | 'spark' | 'check' | 'book' | 'reset' | 'moon'
 function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   const paths: Record<IconName, ReactNode> = {
-    moon: <path d="M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z"/>,
+    moon: <path d="M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z" />,
     settings: <><path d="m9 3 1-1h4l1 3 3 1 3 3-1 3 1 3-3 3-3 1-1 3h-4l-1-3-3-1-3-3 1-3-1-3 3-3 3-1Z" /><circle cx="12" cy="12" r="3" /></>,
     arrow: <path d="M4 12h16m-6-6 6 6-6 6" />, upload: <path d="M12 16V3m-5 5 5-5 5 5M4 15v6h16v-6" />,
     copy: <><rect x="8" y="8" width="12" height="13" rx="2" /><path d="M16 8V3H3v13h5" /></>, download: <path d="M12 3v13m-5-5 5 5 5-5M4 16v5h16v-5" />,
@@ -49,12 +49,14 @@ C
       END`
 function readSettings(): Settings {
   try {
+    // Stored preferences may be stale or manually edited; fall back to defaults unless their shape matches.
     const saved = JSON.parse(localStorage.getItem('reanimate-settings') || 'null')
     if (saved && ['host', 'port', 'basePath', 'model'].every(k => typeof saved[k] === 'string') && ['http', 'https'].includes(saved.protocol)) return saved
   } catch { /* Storage is optional. */ }
   return defaults
 }
 function App() {
+  // main.tsx applies the saved theme before React mounts; use that value for the initial toggle state.
   const [darkMode, setDarkMode] = useState(() => document.documentElement.dataset.theme !== 'light')
   useEffect(() => {
     const theme = darkMode ? 'dark' : 'light'
@@ -63,7 +65,9 @@ function App() {
     try { localStorage.setItem('reanimate-theme', theme) } catch { /* Theme still works for this tab. */ }
   }, [darkMode])
   const [settings, setSettings] = useState<Settings>(readSettings)
+  // Edit a draft so dismissing the dialog leaves the active server settings unchanged.
   const [draft, setDraft] = useState(settings)
+  // Credentials and source/output code stay in React state and are never written to browser storage.
   const [apiKey, setApiKey] = useState('')
   const [modal, setModal] = useState<'settings' | 'guide' | null>(null)
   const [source, setSource] = useState(example)
@@ -83,6 +87,7 @@ function App() {
   const fileInput = useRef<HTMLInputElement>(null)
   const dialog = useRef<HTMLDialogElement>(null)
   const controller = useRef<AbortController | null>(null)
+  // Discovery and conversion have separate lifetimes: closing settings only cancels discovery.
   const connectionController = useRef<AbortController | null>(null)
   const lineNumbers = useRef<HTMLDivElement>(null)
   useEffect(() => {
@@ -92,6 +97,7 @@ function App() {
       connectionController.current?.abort()
     }
   }, [modal])
+  // Stop outstanding requests when the app unmounts, including React Strict Mode's development cleanup.
   useEffect(() => () => { controller.current?.abort(); connectionController.current?.abort() }, [])
   function openSettings() { setDraft(settings); setTestMessage(''); setModels([]); setModal('settings') }
   function updateDraft(next: Partial<Settings>) { setDraft({ ...draft, ...next }); setTestMessage(''); setModels([]) }
@@ -100,8 +106,10 @@ function App() {
     connectionController.current = abort
     setTesting(true); setTestMessage('')
     try {
+      // Either closing the dialog or the ten-second deadline can stop model discovery.
       const response = await apiRequest(draft, apiKey, '/models', { signal: AbortSignal.any([abort.signal, AbortSignal.timeout(10000)]) })
       const data = await response.json()
+      // The dialog may have closed while the response body was being read.
       if (abort.signal.aborted) return
       if (!Array.isArray(data.data)) throw new Error('The server did not return an OpenAI-compatible model list.')
       const names = data.data.map((m: { id?: string }) => m.id).filter((id: unknown): id is string => typeof id === 'string')
@@ -117,6 +125,7 @@ function App() {
       serverUrl(draft)
       if (!draft.model.trim()) throw new Error('Enter the model name served by your LLM server.')
       setSettings({ ...draft, model: draft.model.trim() }); setConnection('Ready to connect')
+      // Saving preferences does not contact the server; only explicit discovery or conversion does.
       try { localStorage.setItem('reanimate-settings', JSON.stringify(draft)) } catch { setNotice('Settings are available for this session; browser storage is unavailable.') }
       setModal(null)
     } catch (e) { setTestMessage(e instanceof Error ? e.message : 'Invalid settings.') }
@@ -127,6 +136,7 @@ function App() {
     setBusy(true); setError(''); setNotice(''); setOutput('')
     const abort = new AbortController(); controller.current = abort
     try {
+      // Share one signal with fetch so both the Cancel button and the five-minute deadline stop the request.
       const result = await convertCode(settings, apiKey, source, comments, numpy, AbortSignal.any([abort.signal, AbortSignal.timeout(300000)]))
       setOutput(result); setConnection('Connected')
     } catch (e) {
@@ -137,6 +147,7 @@ function App() {
   async function loadFile(file?: File) {
     if (!file || busy) return
     if (file.size > 1024 * 1024) { setError('Please choose a source file smaller than 1 MB.'); return }
+    // Read locally; a NUL byte is a simple check for accidental binary uploads before accepting the text.
     try { const text = await file.text(); if (text.includes('\0')) throw new Error('Please upload a text source file.'); setSource(text); setFilename(file.name); setOutput(''); setError(''); setNotice('') }
     catch (e) { setError(e instanceof Error ? e.message : 'Could not read this file.') }
   }
@@ -145,14 +156,16 @@ function App() {
     catch { setError('Clipboard access is unavailable. Select the Python code to copy it, or download the file.') }
   }
   function download() {
+    // Export the text as a file without executing it, then release the temporary URL after the click.
     const url = URL.createObjectURL(new Blob([output], { type: 'text/x-python;charset=utf-8' }))
     const link = document.createElement('a'); link.href = url; link.download = filename.replace(/\.[^.]*$/, '') + '.py'; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000)
   }
+  // Editing invalidates the previous conversion so it cannot be mistaken for output from the new source.
   function editSource(e: ChangeEvent<HTMLTextAreaElement>) { setSource(e.target.value); setOutput(''); setNotice(''); setError('') }
   return <>
-    <header className="topbar"><a className="brand" href="#" aria-label="Reanimate home"><Pumpkin /><span>reanimate<span className="brand-dot">.</span></span></a><nav aria-label="Main navigation"><span className="nav-active">The laboratory</span><button onClick={() => setModal('guide')}><span>How it works</span> <Icon name="arrow" size={14} /></button></nav><div className="header-actions"><button className="theme-toggle" type="button" aria-label="Dark mode" aria-pressed={darkMode} title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'} onClick={() => setDarkMode(current => !current)}><Icon name="moon" size={16}/></button><button className="settings-button" onClick={openSettings}><Icon name="settings" size={16} /> Settings</button></div></header>
+    <header className="topbar"><a className="brand" href="#" aria-label="Reanimate home"><Pumpkin /><span>reanimate fortran<span className="brand-dot">.</span></span></a><nav aria-label="Main navigation"><span className="nav-active">The laboratory</span><button onClick={() => setModal('guide')}><span>How it works</span> <Icon name="arrow" size={14} /></button></nav><div className="header-actions"><button className="theme-toggle" type="button" aria-label="Dark mode" aria-pressed={darkMode} title={darkMode ? 'Switch to light mode' : 'Switch to dark mode'} onClick={() => setDarkMode(current => !current)}><Icon name="moon" size={16} /></button><button className="settings-button" onClick={openSettings}><Icon name="settings" size={16} /> Settings</button></div></header>
     <main>
-      <section className="intro"><div className="intro-copy"><div className="eyebrow"><span /> OLD CODE. NEW LIFE.</div><h1>Some code deserves<br />a <span>second life.</span><svg viewBox="0 0 270 13" aria-hidden="true"><path d="M3 8Q110-3 264 5M8 12Q151 2 254 10" fill="none" stroke="#c6afd9" strokeWidth="3" strokeLinecap="round" /></svg></h1><p>Bring your FORTRAN back from the dead.<br />Turn legacy code into modern Python, with a little local LLM magic.</p></div><Graveyard /><div className="hero-note">A fresh start for old souls. <span>✦</span></div></section>
+      <section className="intro"><div className="intro-copy"><h1>Some code deserves<br />a <span>second life.</span><svg viewBox="0 0 270 13" aria-hidden="true"><path d="M3 8Q110-3 264 5M8 12Q151 2 254 10" fill="none" stroke="#c6afd9" strokeWidth="3" strokeLinecap="round" /></svg></h1><p>Bring your FORTRAN back from the dead.<br />Turn legacy code into modern Python, with a little local LLM magic.</p></div><Graveyard /><div className="hero-note">A fresh start for old souls. <span>✦</span></div></section>
       <section className="laboratory" aria-label="Code conversion laboratory">
         <div className="lab-heading"><div><span className="lab-icon"><Icon name="code" size={18} /></span><h2>The resurrection lab</h2><span className="version-tag">FORTRAN → PYTHON</span></div><span className="local-badge"><Icon name="shield" size={14} /> Local by design</span></div>
         <div className="editors">

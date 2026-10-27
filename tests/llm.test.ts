@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { apiRequest, cleanPython, convertCode, defaults, serverUrl } from '../src/lib/llm.ts'
 
 const originalFetch = globalThis.fetch
+// Each request test replaces fetch locally; restore it so mocks cannot leak into later tests.
 afterEach(() => { globalThis.fetch = originalFetch })
 
 test('builds compatible URLs for IPv4, IPv6, hostnames and custom paths', () => {
