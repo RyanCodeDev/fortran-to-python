@@ -24,3 +24,6 @@
 .modal-content input:focus, .modal-content select:focus { outline-color: var(--orange); }
 .modal-content input:disabled, .modal-content select:disabled { opacity: .7; }
 .modal-content option { background: var(--editor); color: var(--text); }
+
+.pumpkin { color: var(--orange); flex-shrink: 0; }
+.ghost { display: flex; align-items: center; justify-content: center; color: var(--accent); }
