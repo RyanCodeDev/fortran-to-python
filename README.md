@@ -1,8 +1,12 @@
+![Header image](./public/header_fortran-to-python.png)
+
 # Reanimate Fortran — old code, new life
 
 _This is a submission for the [Hacktoberfest Open-Source AI Challenge Week 4: Ghost in the Machine](https://dev.to/challenges/hacktoberfest-week4-2026-10-26)_
 
 A Halloween-themed, client-side React + TypeScript + Vite app that converts legacy FORTRAN to Python using your own OpenAI-compatible LLM server.
+
+![App screenshot](./public/fortran%20screenshot.png)
 
 ## Run locally
 
